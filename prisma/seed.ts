@@ -14,9 +14,10 @@
  * Run: `npx prisma db seed`
  */
 import 'dotenv/config';
-import { PrismaClient, Role } from '@prisma/client';
+import { PrismaClient, Role, ShiftStatus, SwapStatus, DropStatus, ClockEventType, NotificationType } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import * as bcrypt from 'bcrypt';
+import { DateTime } from 'luxon';
 
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
 const prisma = new PrismaClient({ adapter });
@@ -290,6 +291,235 @@ async function main() {
   );
   // eslint-disable-next-line no-console
   console.log(`[seed] All accounts share password: ${SEED_PASSWORD}`);
+
+  await seedAppData({ locByKey, skillByName, userByEmail });
+}
+
+// ─── App data ────────────────────────────────────────────────────────────────
+// Generates 5 weeks of shifts (3 past, current week, next week), assignments,
+// clock events for completed shifts, one pending swap, one open drop, and
+// seeded notifications. Safe to re-run — deletes all shifts/notifications first.
+
+async function seedAppData({
+  locByKey,
+  skillByName,
+  userByEmail,
+}: {
+  locByKey: Map<string, string>;
+  skillByName: Map<string, string>;
+  userByEmail: Map<string, string>;
+}) {
+  // Clear app data. Shift cascade covers assignments/swaps/drops/clockEvents.
+  await prisma.notification.deleteMany({});
+  await prisma.shift.deleteMany({});
+
+  const mgrWestId = userByEmail.get('manager.west@coastal.test')!;
+  const mgrEastId = userByEmail.get('manager.east@coastal.test')!;
+
+  const alice  = userByEmail.get('alice@coastal.test')!;
+  const bob    = userByEmail.get('bob@coastal.test')!;
+  const carol  = userByEmail.get('carol@coastal.test')!;
+  const david  = userByEmail.get('david@coastal.test')!;
+  const erin   = userByEmail.get('erin@coastal.test')!;
+  const frank  = userByEmail.get('frank@coastal.test')!;
+  const grace  = userByEmail.get('grace@coastal.test')!;
+  const henry  = userByEmail.get('henry@coastal.test')!;
+
+  const SM = locByKey.get('SM')!;
+  const SD = locByKey.get('SD')!;
+  const BK = locByKey.get('BK')!;
+  const BO = locByKey.get('BO')!;
+
+  const bartender = skillByName.get('Bartender')!;
+  const lineCook  = skillByName.get('Line cook')!;
+  const server    = skillByName.get('Server')!;
+  const host      = skillByName.get('Host')!;
+
+  // "now" is Thu May 1, 2026 at 7 pm ET / 4 pm PT — evening shifts are underway.
+  const NOW = new Date('2026-05-01T23:00:00Z');
+
+  // Monday of the current week: Apr 28, 2026.
+  const BASE_MONDAY = DateTime.fromISO('2026-04-28', { zone: 'UTC' });
+
+  /** ISO date string (YYYY-MM-DD) for weekOffset × 7 + dayOffset (0=Mon). */
+  function isoDate(weekOffset: number, dayOffset: number): string {
+    return BASE_MONDAY.plus({ weeks: weekOffset, days: dayOffset }).toISODate()!;
+  }
+
+  /** UTC Date for a local time (startH) in a given IANA timezone on a date string. */
+  function localToUTC(date: string, tz: string, hour: number): Date {
+    return DateTime.fromISO(`${date}T${String(hour).padStart(2, '0')}:00:00`, { zone: tz }).toUTC().toJSDate();
+  }
+
+  type ShiftSpec = {
+    locationId: string;
+    tz: string;
+    skillId: string;
+    startH: number;
+    durationH: number;
+    isPremium: boolean;
+    createdById: string;
+    assignee: string | undefined;
+    weekOffset: number;
+    dayOffset: number; // 0=Mon..6=Sun
+  };
+
+  const specs: ShiftSpec[] = [];
+
+  /** Adds shift specs for every combination of weekOffsets × dayOffsets. */
+  function add(
+    locationId: string, tz: string, createdById: string,
+    skillId: string, startH: number, durationH: number,
+    dayOffsets: number[], assignee: string | undefined,
+    weekOffsets: number[], premiumDays: number[] = [],
+  ) {
+    for (const wo of weekOffsets) {
+      for (const d of dayOffsets) {
+        specs.push({ locationId, tz, skillId, startH, durationH,
+          isPremium: premiumDays.includes(d), createdById, assignee, weekOffset: wo, dayOffset: d });
+      }
+    }
+  }
+
+  const ALL_WEEKS = [-3, -2, -1, 0, 1];
+  const PT = 'America/Los_Angeles';
+  const ET = 'America/New_York';
+
+  // ─── Santa Monica (Pacific, Maya) ────────────────────────────────────────
+  // Mon-Fri morning: Bob (Line cook)
+  add(SM, PT, mgrWestId, lineCook,  8, 8, [0,1,2,3,4], bob,       ALL_WEEKS);
+  // Mon-Fri evening: Alice (Bartender). Friday is premium.
+  add(SM, PT, mgrWestId, bartender, 16, 8, [0,1,2,3,4], alice,     ALL_WEEKS, [4]);
+  // Sat: Bob does Host evening (premium); unassigned Bartender slot (coverage gap for demo)
+  add(SM, PT, mgrWestId, host,      16, 8, [5],          bob,       ALL_WEEKS, [5]);
+  add(SM, PT, mgrWestId, bartender, 16, 8, [5],          undefined, ALL_WEEKS, [5]);
+
+  // ─── San Diego (Pacific, Maya) ────────────────────────────────────────────
+  // Mon-Thu evening: David (Bartender). David's availability is Sun-Thu.
+  add(SD, PT, mgrWestId, bartender, 16, 8, [0,1,2,3], david,     ALL_WEEKS);
+  // Wed-Sat evening: Carol (Server). Fri/Sat are premium.
+  add(SD, PT, mgrWestId, server,    16, 8, [2,3,4,5], carol,     ALL_WEEKS, [4,5]);
+
+  // ─── Brooklyn (Eastern, Daniel) ──────────────────────────────────────────
+  // Mon-Fri evening: Erin (Bartender). Friday premium.
+  add(BK, ET, mgrEastId, bartender, 16, 8, [0,1,2,3,4], erin,      ALL_WEEKS, [4]);
+  // Wed-Sun noon: Frank (Line cook). Fri/Sat premium.
+  add(BK, ET, mgrEastId, lineCook,  12, 8, [2,3,4,5,6], frank,     ALL_WEEKS, [4,5]);
+
+  // ─── Boston (Eastern, Daniel) ────────────────────────────────────────────
+  // Mon-Fri morning: Henry (Line cook)
+  add(BO, ET, mgrEastId, lineCook,  8, 8,  [0,1,2,3,4], henry,     ALL_WEEKS);
+  // Fri-Sun evening: Grace (Bartender). Fri/Sat premium. Duration 8h (ends 1 am next day)
+  add(BO, ET, mgrEastId, bartender, 17, 8, [4,5,6],      grace,     ALL_WEEKS, [4,5]);
+  // Mon-Thu evening: unassigned Server slot (visible coverage gap on schedule)
+  add(BO, ET, mgrEastId, server,    16, 8, [0,1,2,3],    undefined, ALL_WEEKS);
+
+  // ─── Create shifts + assignments + clock events ──────────────────────────
+  let shiftCount = 0;
+  let clockCount = 0;
+
+  // Track shift ids for swap/drop anchoring
+  let carolFriMay2ShiftId: string | undefined;
+  let bobSatMay3ShiftId: string | undefined;
+
+  for (const s of specs) {
+    const date = isoDate(s.weekOffset, s.dayOffset);
+    const startsAt = localToUTC(date, s.tz, s.startH);
+    const endsAt   = new Date(startsAt.getTime() + s.durationH * 3_600_000);
+
+    const isCompleted = endsAt <= NOW;
+    const isOngoing   = startsAt <= NOW && endsAt > NOW;
+    const isDraft     = s.weekOffset === 1;
+
+    const shift = await prisma.shift.create({
+      data: {
+        locationId:  s.locationId,
+        skillId:     s.skillId,
+        startsAt,
+        endsAt,
+        headcount:   1,
+        isPremium:   s.isPremium,
+        status:      isDraft ? ShiftStatus.DRAFT : ShiftStatus.PUBLISHED,
+        publishedAt: isDraft ? null : new Date(startsAt.getTime() - 7 * 24 * 3_600_000),
+        createdById: s.createdById,
+        version:     0,
+      },
+    });
+    shiftCount++;
+
+    if (s.assignee) {
+      await prisma.shiftAssignment.create({
+        data: { shiftId: shift.id, userId: s.assignee, assignedById: s.createdById },
+      });
+
+      if (isCompleted) {
+        await prisma.clockEvent.createMany({
+          data: [
+            { shiftId: shift.id, userId: s.assignee, type: ClockEventType.CLOCK_IN,  occurredAt: new Date(startsAt.getTime() +  2 * 60_000) },
+            { shiftId: shift.id, userId: s.assignee, type: ClockEventType.CLOCK_OUT, occurredAt: new Date(endsAt.getTime()   -  5 * 60_000) },
+          ],
+        });
+        clockCount += 2;
+      } else if (isOngoing) {
+        await prisma.clockEvent.create({
+          data: { shiftId: shift.id, userId: s.assignee, type: ClockEventType.CLOCK_IN, occurredAt: new Date(startsAt.getTime() + 3 * 60_000) },
+        });
+        clockCount++;
+      }
+    }
+
+    // Anchor references for swap/drop
+    if (date === '2026-05-02' && s.locationId === SD && s.assignee === carol) carolFriMay2ShiftId = shift.id;
+    if (date === '2026-05-03' && s.locationId === SM && s.assignee === bob)   bobSatMay3ShiftId  = shift.id;
+  }
+
+  // ─── Pending swap: Carol wants to swap her SD Fri May 2 shift with David ─
+  // (David is Bartender at SD; shift is Server — manager will see a finding on approval.
+  //  Good demo of the validation layer.)
+  if (carolFriMay2ShiftId) {
+    await prisma.swapRequest.create({
+      data: {
+        shiftId:    carolFriMay2ShiftId,
+        fromUserId: carol,
+        toUserId:   david,
+        status:     SwapStatus.PENDING_RECIPIENT,
+        reason:     'Family event — need someone to cover my Fri evening slot.',
+      },
+    });
+  }
+
+  // ─── Open drop: Bob drops his SM Sat May 3 Host shift ───────────────────
+  if (bobSatMay3ShiftId) {
+    const satStart = localToUTC('2026-05-03', PT, 16);
+    await prisma.dropRequest.create({
+      data: {
+        shiftId:    bobSatMay3ShiftId,
+        fromUserId: bob,
+        status:     DropStatus.OPEN,
+        expiresAt:  new Date(satStart.getTime() - 24 * 3_600_000), // 24h before shift
+        reason:     'Personal commitment, looking for coverage.',
+      },
+    });
+  }
+
+  // ─── Notifications ───────────────────────────────────────────────────────
+  const notifs = [
+    { userId: mgrWestId, type: NotificationType.SWAP_REQUESTED,     title: 'Swap request needs approval',   body: 'Carol Patel has requested to swap her Fri May 2 shift at San Diego. Pending recipient acceptance.' },
+    { userId: mgrWestId, type: NotificationType.DROP_REQUESTED,     title: 'Shift dropped — coverage needed', body: 'Bob Martinez dropped his Sat May 3 Host shift at Santa Monica. It is now open for claims.' },
+    { userId: mgrEastId, type: NotificationType.OVERTIME_WARNING,   title: 'Overtime alert — Erin Walsh',   body: 'Erin Walsh is projected to reach 40 hours this week across Brooklyn and Boston assignments.' },
+    { userId: david,     type: NotificationType.SWAP_REQUESTED,     title: 'Swap request from Carol Patel', body: 'Carol Patel wants to swap her Fri May 2 SD Server shift with you. Please respond.' },
+    { userId: carol,     type: NotificationType.SHIFT_ASSIGNED,     title: 'New shift assigned',            body: 'You have been assigned a Server shift at San Diego on Fri May 2, 4:00 PM PT.' },
+    { userId: alice,     type: NotificationType.SCHEDULE_PUBLISHED, title: 'Schedule published — week of May 5', body: 'Your schedule for next week has been published. You are assigned Mon–Fri evenings at Santa Monica.' },
+    { userId: henry,     type: NotificationType.SHIFT_ASSIGNED,     title: 'New shift assigned',            body: 'You have been assigned a Line cook shift at Boston on Mon May 5, 8:00 AM ET.' },
+    { userId: grace,     type: NotificationType.SCHEDULE_PUBLISHED, title: 'Schedule published — week of May 5', body: 'You are assigned Friday, Saturday, and Sunday evenings at Boston next week.' },
+  ];
+
+  for (const n of notifs) {
+    await prisma.notification.create({ data: n });
+  }
+
+  // eslint-disable-next-line no-console
+  console.log(`[seed-app] shifts=${shiftCount} clockEvents=${clockCount} swap=1 drop=1 notifications=${notifs.length}`);
 }
 
 main()
