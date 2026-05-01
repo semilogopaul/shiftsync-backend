@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import {
   Certification,
   CertificationSkill,
+  Location,
   Prisma,
   Skill,
   User,
@@ -11,6 +12,7 @@ import { PrismaService } from '../../database/prisma.service';
 export type CertificationWithRelations = Certification & {
   skills: (CertificationSkill & { skill: Skill })[];
   user?: Pick<User, 'id' | 'firstName' | 'lastName' | 'email'> | null;
+  location?: Pick<Location, 'id' | 'name' | 'timezone'> | null;
 };
 
 @Injectable()
@@ -49,7 +51,10 @@ export class CertificationsRepository {
   ): Promise<CertificationWithRelations[]> {
     return this.prisma.certification.findMany({
       where: { userId, decertifiedAt: null },
-      include: { skills: { include: { skill: true } } },
+      include: {
+        skills: { include: { skill: true } },
+        location: { select: { id: true, name: true, timezone: true } },
+      },
       orderBy: { certifiedAt: 'desc' },
     });
   }
@@ -60,7 +65,10 @@ export class CertificationsRepository {
   ): Promise<CertificationWithRelations[]> {
     return this.prisma.certification.findMany({
       where: { userId, ...(includeHistory ? {} : { decertifiedAt: null }) },
-      include: { skills: { include: { skill: true } } },
+      include: {
+        skills: { include: { skill: true } },
+        location: { select: { id: true, name: true, timezone: true } },
+      },
       orderBy: { certifiedAt: 'desc' },
     });
   }
