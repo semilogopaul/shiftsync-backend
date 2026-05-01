@@ -87,21 +87,19 @@ Deploy command: `npx prisma migrate deploy && node dist/src/main.js`
 
 ## Seed credentials
 
-All seed accounts share the password: `Password!23Secure`
-
-| Email | Role | Scoped to |
-| --- | --- | --- |
-| `testadmin@coastal.test` | ADMIN | All locations |
-| `manager.west@coastal.test` | MANAGER | Santa Monica, San Diego |
-| `manager.east@coastal.test` | MANAGER | Brooklyn, Boston |
-| `alice@coastal.test` | EMPLOYEE | Santa Monica (Bartender, Server), San Diego (Bartender) |
-| `bob@coastal.test` | EMPLOYEE | Santa Monica (Line cook, Host) |
-| `carol@coastal.test` | EMPLOYEE | San Diego (Server, Host) |
-| `david@coastal.test` | EMPLOYEE | San Diego (Bartender, Line cook) |
-| `erin@coastal.test` | EMPLOYEE | Brooklyn (Bartender, Server), Boston (Server) |
-| `frank@coastal.test` | EMPLOYEE | Brooklyn (Line cook, Host) |
-| `grace@coastal.test` | EMPLOYEE | Boston (Bartender, Server) |
-| `henry@coastal.test` | EMPLOYEE | Boston (Line cook, Host) |
+| Email | Password | Role | Scoped to |
+| --- | --- | --- | --- |
+| `testadmin@coastal.test` | `Password!23Secure` | ADMIN | All locations |
+| `manager.west@coastal.test` | `Password!23Secure` | MANAGER | Santa Monica, San Diego |
+| `manager.east@coastal.test` | `Password!23Secure` | MANAGER | Brooklyn, Boston |
+| `alice@coastal.test` | `Password!23Secure` | EMPLOYEE | Santa Monica (Bartender, Server), San Diego (Bartender) |
+| `bob@coastal.test` | `Password!23Secure` | EMPLOYEE | Santa Monica (Line cook, Host) |
+| `carol@coastal.test` | `Password!23Secure` | EMPLOYEE | San Diego (Server, Host) |
+| `david@coastal.test` | `Password!23Secure` | EMPLOYEE | San Diego (Bartender, Line cook) |
+| `erin@coastal.test` | `Password!23Secure` | EMPLOYEE | Brooklyn (Bartender, Server), Boston (Server) |
+| `frank@coastal.test` | `Password!23Secure` | EMPLOYEE | Brooklyn (Line cook, Host) |
+| `grace@coastal.test` | `Password!23Secure` | EMPLOYEE | Boston (Bartender, Server) |
+| `henry@coastal.test` | `Password!23Secure` | EMPLOYEE | Boston (Line cook, Host) |
 
 ## Scripts
 
