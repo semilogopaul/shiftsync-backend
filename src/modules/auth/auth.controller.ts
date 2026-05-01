@@ -102,7 +102,7 @@ export class AuthController {
     // No JTI on access token — best effort: clear cookies + revoke refresh by jti if cookie still present
     // The refresh cookie is path-restricted, so we can't read it here. Workaround: revoke all sessions.
     // For convenience we still expose a /logout-everywhere variant via passport refresh guard.
-    void this.auth.logout({ sub: user.sub, jti: '' }, res, readContext(req));
+    await this.auth.logout({ sub: user.sub, jti: '' }, res, readContext(req));
     return ok({ success: true }, 'Logged out');
   }
 

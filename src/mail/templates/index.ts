@@ -15,9 +15,8 @@ export function welcomeEmail(ctx: NameContext & { verifyUrl: string }): Rendered
     html: baseLayout({
       title: `Welcome, ${ctx.firstName}`,
       preview: 'Get started by verifying your email address.',
-      bodyHtml: `
-        <p>Your ShiftSync account is ready. Verify your email to activate your access and start picking up shifts.</p>
-        <p>This verification link expires in 24 hours.</p>`,
+      bodyHtml: `<p>Your ShiftSync account is ready. Verify your email to activate your access and start picking up shifts.</p>`,
+
       cta: { label: 'Verify email', url: ctx.verifyUrl },
       footerNote: "If you didn't expect this email, you can safely ignore it.",
     }),
@@ -30,7 +29,7 @@ export function emailVerificationEmail(ctx: NameContext & { verifyUrl: string })
     html: baseLayout({
       title: 'Verify your email',
       preview: 'Confirm your email to finish setting up ShiftSync.',
-      bodyHtml: `<p>Hi ${escapeHtml(ctx.firstName)} — please confirm your email to activate your account. This link expires in 24 hours.</p>`,
+      bodyHtml: `<p>Hi ${escapeHtml(ctx.firstName)} — please confirm your email to activate your account.</p>`,
       cta: { label: 'Verify email', url: ctx.verifyUrl },
     }),
   };

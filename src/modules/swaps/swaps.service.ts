@@ -210,7 +210,7 @@ export class SwapsService {
       ipAddress: ctx.ipAddress,
       userAgent: ctx.userAgent,
     });
-    this.events.emit('swap.cancelled', { swapId: id, shiftId: swap.shiftId });
+    this.events.emit('swap.cancelled', { swapId: id, shiftId: swap.shiftId, fromUserId: swap.fromUserId, toUserId: swap.toUserId, locationId: swap.shift.locationId });
     return updated;
   }
 
@@ -294,7 +294,7 @@ export class SwapsService {
       ipAddress: ctx.ipAddress,
       userAgent: ctx.userAgent,
     });
-    this.events.emit('swap.rejected', { swapId: id, shiftId: swap.shiftId });
+    this.events.emit('swap.rejected', { swapId: id, shiftId: swap.shiftId, fromUserId: swap.fromUserId, toUserId: swap.toUserId, locationId: swap.shift.locationId });
     return updated;
   }
 
@@ -509,7 +509,7 @@ export class SwapsService {
       ipAddress: ctx.ipAddress,
       userAgent: ctx.userAgent,
     });
-    this.events.emit('drop.rejected', { dropId: id, shiftId: drop.shiftId });
+    this.events.emit('drop.rejected', { dropId: id, shiftId: drop.shiftId, fromUserId: drop.fromUserId, claimedById: drop.claimedById ?? null, locationId: drop.shift.locationId });
     return updated;
   }
 
@@ -532,7 +532,7 @@ export class SwapsService {
       ipAddress: ctx.ipAddress,
       userAgent: ctx.userAgent,
     });
-    this.events.emit('drop.cancelled', { dropId: id, shiftId: drop.shiftId });
+    this.events.emit('drop.cancelled', { dropId: id, shiftId: drop.shiftId, fromUserId: drop.fromUserId, claimedById: drop.claimedById ?? null, locationId: drop.shift.locationId });
     return updated;
   }
 

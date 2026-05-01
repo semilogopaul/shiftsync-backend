@@ -229,19 +229,34 @@ export class NotificationsService {
   }
 
   @OnEvent('swap.recipient.accepted')
-  async onSwapRecipientAccepted(payload: { swapId: string; shiftId: string; locationId: string; fromUserId: string }) {
-    // Notify the requester that their swap is now awaiting manager approval.
+  async onSwapRecipientAccepted(payload: { swapId: string; shiftId: string; locationId: string; fromUserId: string; toUserId: string }) {
     const shift = await this.shifts.findById(payload.shiftId);
     const location = await this.locations.findById(payload.locationId);
-    const user = await this.users.findById(payload.fromUserId);
-    if (!shift || !location || !user) return;
+    const requester = await this.users.findById(payload.fromUserId);
+    const recipient = await this.users.findById(payload.toUserId);
+    if (!shift || !location || !requester || !recipient) return;
+    const whenLocal = formatInZone(shift.startsAt, location.timezone);
+
+    // Notify the requester that their swap is now awaiting manager approval.
     await this.deliver({
       userId: payload.fromUserId,
       type: NotificationType.SWAP_RECIPIENT_RESPONDED,
-      title: 'Swap accepted by recipient',
-      body: 'Awaiting manager approval',
+      title: 'Swap accepted — awaiting manager approval',
+      body: `${recipient.firstName} ${recipient.lastName} accepted. A manager will review it shortly.`,
       payload: { swapId: payload.swapId },
     });
+
+    // Notify managers of the location so they can approve.
+    const managers = await this.locations.listManagers(payload.locationId);
+    for (const m of managers) {
+      await this.deliver({
+        userId: m.userId,
+        type: NotificationType.SWAP_RECIPIENT_RESPONDED,
+        title: 'Swap needs your approval',
+        body: `${requester.firstName} ${requester.lastName} ↔ ${recipient.firstName} ${recipient.lastName} — ${location.name} on ${whenLocal}`,
+        payload: { swapId: payload.swapId, shiftId: payload.shiftId },
+      });
+    }
   }
 
   @OnEvent('swap.approved')
@@ -270,15 +285,63 @@ export class NotificationsService {
     }
   }
 
-  @OnEvent('swap.rejected')
-  async onSwapRejected(payload: { swapId: string; shiftId: string }) {
+  @OnEvent('swap.recipient.rejected')
+  async onSwapRecipientRejected(payload: { swapId: string; shiftId: string; fromUserId: string; toUserId: string }) {
     const shift = await this.shifts.findById(payload.shiftId);
     if (!shift) return;
     const location = await this.locations.findById(shift.locationId);
     if (!location) return;
     const whenLocal = formatInZone(shift.startsAt, location.timezone);
-    // Notify both parties via swapId payload (we don't have userIds here; accept it as best-effort).
-    void whenLocal;
+    const recipient = await this.users.findById(payload.toUserId);
+    await this.deliver({
+      userId: payload.fromUserId,
+      type: NotificationType.SWAP_RECIPIENT_RESPONDED,
+      title: 'Swap request declined',
+      body: `${recipient ? `${recipient.firstName} ${recipient.lastName}` : 'The recipient'} declined your swap for ${location.name} on ${whenLocal}`,
+      payload: { swapId: payload.swapId, shiftId: payload.shiftId },
+    });
+  }
+
+  @OnEvent('swap.cancelled')
+  async onSwapCancelled(payload: { swapId: string; shiftId: string; fromUserId: string; toUserId: string; locationId: string }) {
+    const shift = await this.shifts.findById(payload.shiftId);
+    const location = await this.locations.findById(payload.locationId);
+    if (!shift || !location) return;
+    const whenLocal = formatInZone(shift.startsAt, location.timezone);
+    const requester = await this.users.findById(payload.fromUserId);
+    await this.deliver({
+      userId: payload.toUserId,
+      type: NotificationType.SWAP_AUTO_CANCELLED,
+      title: 'Swap request cancelled',
+      body: `${requester ? `${requester.firstName} ${requester.lastName}` : 'The requester'} cancelled the swap for ${location.name} on ${whenLocal}`,
+      payload: { swapId: payload.swapId, shiftId: payload.shiftId },
+    });
+  }
+
+  @OnEvent('swap.rejected')
+  async onSwapRejected(payload: { swapId: string; shiftId: string; fromUserId: string; toUserId: string; locationId: string }) {
+    const shift = await this.shifts.findById(payload.shiftId);
+    const location = await this.locations.findById(payload.locationId);
+    if (!shift || !location) return;
+    const whenLocal = formatInZone(shift.startsAt, location.timezone);
+    for (const userId of [payload.fromUserId, payload.toUserId]) {
+      const user = await this.users.findById(userId);
+      if (!user) continue;
+      await this.deliver({
+        userId,
+        type: NotificationType.SWAP_MANAGER_REJECTED,
+        title: 'Swap not approved',
+        body: `${location.name} on ${whenLocal}`,
+        payload: { swapId: payload.swapId, shiftId: payload.shiftId },
+        email: swapDecisionEmail({
+          firstName: user.firstName,
+          approved: false,
+          locationName: location.name,
+          whenLocal,
+          shiftUrl: `/shifts/${payload.shiftId}`,
+        }),
+      });
+    }
   }
 
   @OnEvent('swap.auto.cancelled')
@@ -408,6 +471,24 @@ export class NotificationsService {
         payload: { dropId: payload.dropId, shiftId: payload.shiftId },
       });
     }
+  }
+
+  @OnEvent('drop.rejected')
+  async onDropRejected(payload: { dropId: string; shiftId: string; fromUserId: string; claimedById: string | null; locationId: string }) {
+    if (!payload.claimedById) return;
+    const shift = await this.shifts.findById(payload.shiftId);
+    const location = await this.locations.findById(payload.locationId);
+    if (!shift || !location) return;
+    const whenLocal = formatInZone(shift.startsAt, location.timezone);
+    const claimer = await this.users.findById(payload.claimedById);
+    if (!claimer) return;
+    await this.deliver({
+      userId: payload.claimedById,
+      type: NotificationType.DROP_REJECTED,
+      title: 'Shift claim not approved',
+      body: `Your claim for ${location.name} on ${whenLocal} was not approved by the manager`,
+      payload: { dropId: payload.dropId, shiftId: payload.shiftId },
+    });
   }
 
   @OnEvent('drop.approved')

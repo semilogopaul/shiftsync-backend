@@ -37,7 +37,6 @@ import {
 import { generateOpaqueToken, sha256Hex } from '../../common/utils/token.util';
 
 const PASSWORD_RESET_TTL_MS = 60 * 60 * 1000;
-const EMAIL_VERIFY_TTL_MS = 24 * 60 * 60 * 1000;
 
 interface RequestContext {
   readonly ipAddress?: string;
@@ -193,6 +192,18 @@ export class AuthService {
         userAgent: ctx.userAgent,
       });
       throw new UnauthorizedException('Invalid credentials');
+    }
+
+    if (!user.emailVerified) {
+      this.audit.log({
+        action: AuditAction.LOGIN_FAILED,
+        entityType: 'User',
+        entityId: user.id,
+        meta: { email, reason: 'email_not_verified' },
+        ipAddress: ctx.ipAddress,
+        userAgent: ctx.userAgent,
+      });
+      throw new UnauthorizedException('Please verify your email address before signing in. Check your inbox for the verification link.');
     }
 
     await this.issueTokens(user, res, ctx);
@@ -436,18 +447,19 @@ export class AuthService {
   private async createEmailVerificationToken(userId: string): Promise<string> {
     const rawToken = generateOpaqueToken();
     const tokenHash = sha256Hex(rawToken);
+    // expiresAt is a required schema column; set far-future — verification links do not expire.
     await this.authRepo.createEmailVerification({
       userId,
       tokenHash,
-      expiresAt: new Date(Date.now() + EMAIL_VERIFY_TTL_MS),
+      expiresAt: new Date('2100-01-01T00:00:00Z'),
     });
     return rawToken;
   }
 
   async verifyEmail(rawToken: string, ctx: RequestContext): Promise<void> {
     const tokenHash = sha256Hex(rawToken);
-    const ev = await this.authRepo.findValidEmailVerification(tokenHash, new Date());
-    if (!ev) throw new BadRequestException('Invalid or expired verification token');
+    const ev = await this.authRepo.findValidEmailVerification(tokenHash);
+    if (!ev) throw new BadRequestException('Invalid or already used verification token');
 
     const user = await this.users.findByIdIncludingDeleted(ev.userId);
     if (!user) throw new BadRequestException('Invalid or expired verification token');

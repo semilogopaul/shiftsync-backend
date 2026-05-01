@@ -105,9 +105,9 @@ export class AuthRepository {
     return this.prisma.emailVerification.create({ data: input });
   }
 
-  async findValidEmailVerification(tokenHash: string, now: Date): Promise<EmailVerification | null> {
+  async findValidEmailVerification(tokenHash: string): Promise<EmailVerification | null> {
     return this.prisma.emailVerification.findFirst({
-      where: { tokenHash, usedAt: null, expiresAt: { gt: now } },
+      where: { tokenHash, usedAt: null },
     });
   }
 

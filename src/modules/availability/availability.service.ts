@@ -282,7 +282,7 @@ export class AvailabilityService {
     );
     if (overlapping.length > 0) {
       throw new BadRequestException(
-        `You already have an exception on ${input.startsAt.toISOString().slice(0, 10)}. Delete it first.`,
+        `You already have an exception on ${input.startsAt.toISOString().slice(0, 10)}.`,
       );
     }
     const created = await this.repo.createException({ ...input, userId });
