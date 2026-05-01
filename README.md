@@ -89,7 +89,7 @@ Deploy command: `npx prisma migrate deploy && node dist/src/main.js`
 
 | Email | Password | Role | Scoped to |
 | --- | --- | --- | --- |
-| `testadmin@coastal.test` | `Password!23Secure` | ADMIN | All locations |
+| `admin@coastal.test` | `Password!23Secure` | ADMIN | All locations |
 | `manager.west@coastal.test` | `Password!23Secure` | MANAGER | Santa Monica, San Diego |
 | `manager.east@coastal.test` | `Password!23Secure` | MANAGER | Brooklyn, Boston |
 | `alice@coastal.test` | `Password!23Secure` | EMPLOYEE | Santa Monica (Bartender, Server), San Diego (Bartender) |
