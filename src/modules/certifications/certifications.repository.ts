@@ -1,9 +1,16 @@
 import { Injectable } from '@nestjs/common';
-import { Certification, CertificationSkill, Prisma, Skill } from '@prisma/client';
+import {
+  Certification,
+  CertificationSkill,
+  Prisma,
+  Skill,
+  User,
+} from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 
 export type CertificationWithRelations = Certification & {
   skills: (CertificationSkill & { skill: Skill })[];
+  user?: Pick<User, 'id' | 'firstName' | 'lastName' | 'email'> | null;
 };
 
 @Injectable()
@@ -17,21 +24,29 @@ export class CertificationsRepository {
     });
   }
 
-  async findByUserAndLocation(userId: string, locationId: string): Promise<CertificationWithRelations | null> {
+  async findByUserAndLocation(
+    userId: string,
+    locationId: string,
+  ): Promise<CertificationWithRelations | null> {
     return this.prisma.certification.findUnique({
       where: { userId_locationId: { userId, locationId } },
       include: { skills: { include: { skill: true } } },
     });
   }
 
-  async findActiveForUserLocation(userId: string, locationId: string): Promise<CertificationWithRelations | null> {
+  async findActiveForUserLocation(
+    userId: string,
+    locationId: string,
+  ): Promise<CertificationWithRelations | null> {
     return this.prisma.certification.findFirst({
       where: { userId, locationId, decertifiedAt: null },
       include: { skills: { include: { skill: true } } },
     });
   }
 
-  async listActiveForUser(userId: string): Promise<CertificationWithRelations[]> {
+  async listActiveForUser(
+    userId: string,
+  ): Promise<CertificationWithRelations[]> {
     return this.prisma.certification.findMany({
       where: { userId, decertifiedAt: null },
       include: { skills: { include: { skill: true } } },
@@ -39,7 +54,10 @@ export class CertificationsRepository {
     });
   }
 
-  async listForUser(userId: string, includeHistory: boolean): Promise<CertificationWithRelations[]> {
+  async listForUser(
+    userId: string,
+    includeHistory: boolean,
+  ): Promise<CertificationWithRelations[]> {
     return this.prisma.certification.findMany({
       where: { userId, ...(includeHistory ? {} : { decertifiedAt: null }) },
       include: { skills: { include: { skill: true } } },
@@ -47,10 +65,18 @@ export class CertificationsRepository {
     });
   }
 
-  async listForLocation(locationId: string, includeHistory: boolean): Promise<CertificationWithRelations[]> {
+  async listForLocation(
+    locationId: string,
+    includeHistory: boolean,
+  ): Promise<CertificationWithRelations[]> {
     return this.prisma.certification.findMany({
       where: { locationId, ...(includeHistory ? {} : { decertifiedAt: null }) },
-      include: { skills: { include: { skill: true } } },
+      include: {
+        skills: { include: { skill: true } },
+        user: {
+          select: { id: true, firstName: true, lastName: true, email: true },
+        },
+      },
       orderBy: { certifiedAt: 'desc' },
     });
   }
@@ -78,14 +104,23 @@ export class CertificationsRepository {
 
   async updateWithSkills(
     id: string,
-    patch: { expiresAt?: Date | null; notes?: string | null; skillIds?: string[] },
+    patch: {
+      expiresAt?: Date | null;
+      notes?: string | null;
+      skillIds?: string[];
+    },
   ): Promise<CertificationWithRelations> {
     return this.prisma.$transaction(async (tx) => {
       if (patch.skillIds) {
-        await tx.certificationSkill.deleteMany({ where: { certificationId: id } });
+        await tx.certificationSkill.deleteMany({
+          where: { certificationId: id },
+        });
         if (patch.skillIds.length > 0) {
           await tx.certificationSkill.createMany({
-            data: patch.skillIds.map((skillId) => ({ certificationId: id, skillId })),
+            data: patch.skillIds.map((skillId) => ({
+              certificationId: id,
+              skillId,
+            })),
           });
         }
       }

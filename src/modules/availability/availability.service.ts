@@ -22,6 +22,26 @@ import {
   overlapsAny,
 } from '../../common/utils/time.util';
 
+const DAY_NAMES = [
+  'Sunday',
+  'Monday',
+  'Tuesday',
+  'Wednesday',
+  'Thursday',
+  'Friday',
+  'Saturday',
+];
+const formatDayName = (day: number): string => DAY_NAMES[day] ?? `day ${day}`;
+const formatMinutes = (minutes: number): string => {
+  const h24 = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  const period = h24 >= 12 ? 'pm' : 'am';
+  const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+  return m === 0
+    ? `${h12}${period}`
+    : `${h12}:${String(m).padStart(2, '0')}${period}`;
+};
+
 interface RequestContext {
   readonly actorId: string;
   readonly actorRole: Role;
@@ -46,7 +66,10 @@ export class AvailabilityService {
 
   // ─── Authorization helper ────────────────────────────────────────────
 
-  private assertSelfOrPrivileged(actor: { sub: string; role: Role }, userId: string): void {
+  private assertSelfOrPrivileged(
+    actor: { sub: string; role: Role },
+    userId: string,
+  ): void {
     if (actor.sub === userId) return;
     if (actor.role === Role.ADMIN || actor.role === Role.MANAGER) return;
     throw new ForbiddenException('You can only manage your own availability');
@@ -54,14 +77,19 @@ export class AvailabilityService {
 
   private validateWindow(startMinute: number, endMinute: number): void {
     if (startMinute === endMinute) {
-      throw new BadRequestException('startMinute and endMinute cannot be equal');
+      throw new BadRequestException(
+        'startMinute and endMinute cannot be equal',
+      );
     }
     // endMinute < startMinute is allowed → window crosses midnight.
   }
 
   // ─── Recurring availability ──────────────────────────────────────────
 
-  async listForUser(actor: { sub: string; role: Role }, userId: string): Promise<Availability[]> {
+  async listForUser(
+    actor: { sub: string; role: Role },
+    userId: string,
+  ): Promise<Availability[]> {
     this.assertSelfOrPrivileged(actor, userId);
     const user = await this.users.findById(userId);
     if (!user) throw new NotFoundException('User not found');
@@ -86,8 +114,14 @@ export class AvailabilityService {
       throw new BadRequestException('timezone is not a valid IANA timezone');
     }
     this.validateWindow(input.startMinute, input.endMinute);
-    if (input.effectiveFrom && input.effectiveUntil && input.effectiveFrom > input.effectiveUntil) {
-      throw new BadRequestException('effectiveFrom must be on or before effectiveUntil');
+    if (
+      input.effectiveFrom &&
+      input.effectiveUntil &&
+      input.effectiveFrom > input.effectiveUntil
+    ) {
+      throw new BadRequestException(
+        'effectiveFrom must be on or before effectiveUntil',
+      );
     }
     // Reject overlapping recurring windows on the same dayOfWeek + tz, since
     // they would either contradict each other or silently merge.
@@ -100,7 +134,7 @@ export class AvailabilityService {
         w.endMinute > input.startMinute
       ) {
         throw new BadRequestException(
-          `Overlaps existing availability window ${w.startMinute}-${w.endMinute} on day ${w.dayOfWeek}`,
+          `You already have a ${formatDayName(w.dayOfWeek)} window from ${formatMinutes(w.startMinute)} to ${formatMinutes(w.endMinute)} that overlaps this one.`,
         );
       }
     }
@@ -125,7 +159,11 @@ export class AvailabilityService {
       ipAddress: ctx.ipAddress,
       userAgent: ctx.userAgent,
     });
-    this.events.emit('availability.changed', { userId, kind: 'recurring.created', recordId: created.id });
+    this.events.emit('availability.changed', {
+      userId,
+      kind: 'recurring.created',
+      recordId: created.id,
+    });
     return created;
   }
 
@@ -173,11 +211,19 @@ export class AvailabilityService {
       ipAddress: ctx.ipAddress,
       userAgent: ctx.userAgent,
     });
-    this.events.emit('availability.changed', { userId: before.userId, kind: 'recurring.updated', recordId: id });
+    this.events.emit('availability.changed', {
+      userId: before.userId,
+      kind: 'recurring.updated',
+      recordId: id,
+    });
     return after;
   }
 
-  async remove(id: string, actor: { sub: string; role: Role }, ctx: RequestContext): Promise<void> {
+  async remove(
+    id: string,
+    actor: { sub: string; role: Role },
+    ctx: RequestContext,
+  ): Promise<void> {
     const before = await this.repo.findById(id);
     if (!before) throw new NotFoundException('Availability not found');
     this.assertSelfOrPrivileged(actor, before.userId);
@@ -193,7 +239,11 @@ export class AvailabilityService {
       ipAddress: ctx.ipAddress,
       userAgent: ctx.userAgent,
     });
-    this.events.emit('availability.changed', { userId: before.userId, kind: 'recurring.deleted', recordId: id });
+    this.events.emit('availability.changed', {
+      userId: before.userId,
+      kind: 'recurring.deleted',
+      recordId: id,
+    });
   }
 
   // ─── Exceptions ──────────────────────────────────────────────────────
@@ -335,7 +385,8 @@ export class AvailabilityService {
     startsAt: Date,
     endsAt: Date,
   ): Promise<AvailabilityCheckResult> {
-    if (endsAt <= startsAt) return { available: false, reason: 'Invalid time window' };
+    if (endsAt <= startsAt)
+      return { available: false, reason: 'Invalid time window' };
 
     const requested = { startsAt, endsAt };
 
@@ -350,7 +401,8 @@ export class AvailabilityService {
     if (overlapsAny(requested, unavailableIntervals)) {
       return {
         available: false,
-        reason: 'User has an unavailable exception overlapping the requested time',
+        reason:
+          'User has an unavailable exception overlapping the requested time',
       };
     }
 
@@ -378,7 +430,10 @@ export class AvailabilityService {
     }
 
     if (coverage.length === 0) {
-      return { available: false, reason: 'User has no declared availability for this period' };
+      return {
+        available: false,
+        reason: 'User has no declared availability for this period',
+      };
     }
 
     if (!containedInAny(requested, coverage)) {
