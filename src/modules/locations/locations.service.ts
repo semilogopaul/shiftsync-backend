@@ -32,23 +32,40 @@ export class LocationsService {
    * Returns true if the actor is allowed to read a given location:
    * - ADMIN: always
    * - MANAGER: only when assigned via LocationManager
-   * - EMPLOYEE: never via this method (employees access via shift/cert flows)
+   * - EMPLOYEE: only locations they are certified for (needed to read shift details)
    */
-  async assertCanReadLocation(actor: { sub: string; role: Role }, locationId: string): Promise<void> {
+  async assertCanReadLocation(
+    actor: { sub: string; role: Role },
+    locationId: string,
+  ): Promise<void> {
     if (actor.role === Role.ADMIN) return;
     if (actor.role === Role.MANAGER) {
       const ok = await this.repo.isManagerOf(actor.sub, locationId);
-      if (!ok) throw new ForbiddenException('You are not a manager of this location');
+      if (!ok)
+        throw new ForbiddenException('You are not a manager of this location');
+      return;
+    }
+    if (actor.role === Role.EMPLOYEE) {
+      const certified = await this.repo.isEmployeeCertifiedForLocation(
+        actor.sub,
+        locationId,
+      );
+      if (!certified)
+        throw new ForbiddenException('You are not certified for this location');
       return;
     }
     throw new ForbiddenException('Insufficient permissions');
   }
 
-  async assertCanManageLocation(actor: { sub: string; role: Role }, locationId: string): Promise<void> {
+  async assertCanManageLocation(
+    actor: { sub: string; role: Role },
+    locationId: string,
+  ): Promise<void> {
     if (actor.role === Role.ADMIN) return;
     if (actor.role === Role.MANAGER) {
       const ok = await this.repo.isManagerOf(actor.sub, locationId);
-      if (!ok) throw new ForbiddenException('You are not a manager of this location');
+      if (!ok)
+        throw new ForbiddenException('You are not a manager of this location');
       return;
     }
     throw new ForbiddenException('Insufficient permissions');
@@ -66,13 +83,16 @@ export class LocationsService {
   ) {
     const scoped = {
       ...filter,
-      // MANAGER → restrict to their assigned locations.
       managedByUserId: actor.role === Role.MANAGER ? actor.sub : undefined,
+      certifiedUserId: actor.role === Role.EMPLOYEE ? actor.sub : undefined,
     };
     return this.repo.findManyPaginated(scoped, pagination);
   }
 
-  async getById(actor: { sub: string; role: Role }, id: string): Promise<Location> {
+  async getById(
+    actor: { sub: string; role: Role },
+    id: string,
+  ): Promise<Location> {
     const location = await this.repo.findById(id);
     if (!location) throw new NotFoundException('Location not found');
     await this.assertCanReadLocation(actor, id);
@@ -87,7 +107,8 @@ export class LocationsService {
       throw new BadRequestException('timezone is not a valid IANA timezone');
     }
     const existing = await this.repo.findByName(input.name);
-    if (existing) throw new ConflictException('A location with that name already exists');
+    if (existing)
+      throw new ConflictException('A location with that name already exists');
 
     const created = await this.repo.createOne({
       name: input.name,
@@ -110,7 +131,12 @@ export class LocationsService {
 
   async update(
     id: string,
-    patch: { name?: string; timezone?: string; address?: string; isActive?: boolean },
+    patch: {
+      name?: string;
+      timezone?: string;
+      address?: string;
+      isActive?: boolean;
+    },
     ctx: RequestContext,
   ): Promise<Location> {
     const before = await this.repo.findById(id);
@@ -185,18 +211,25 @@ export class LocationsService {
     }));
   }
 
-  async assignManager(locationId: string, userId: string, ctx: RequestContext): Promise<void> {
+  async assignManager(
+    locationId: string,
+    userId: string,
+    ctx: RequestContext,
+  ): Promise<void> {
     const location = await this.repo.findById(locationId);
     if (!location) throw new NotFoundException('Location not found');
 
     const user = await this.users.findById(userId);
     if (!user) throw new NotFoundException('User not found');
     if (user.role !== Role.MANAGER) {
-      throw new BadRequestException('Only users with MANAGER role can be assigned as managers');
+      throw new BadRequestException(
+        'Only users with MANAGER role can be assigned as managers',
+      );
     }
 
     const already = await this.repo.isManagerOf(userId, locationId);
-    if (already) throw new ConflictException('User is already a manager of this location');
+    if (already)
+      throw new ConflictException('User is already a manager of this location');
 
     await this.repo.assignManager(userId, locationId);
     this.audit.log({
@@ -211,12 +244,17 @@ export class LocationsService {
     });
   }
 
-  async removeManager(locationId: string, userId: string, ctx: RequestContext): Promise<void> {
+  async removeManager(
+    locationId: string,
+    userId: string,
+    ctx: RequestContext,
+  ): Promise<void> {
     const location = await this.repo.findById(locationId);
     if (!location) throw new NotFoundException('Location not found');
 
     const isManager = await this.repo.isManagerOf(userId, locationId);
-    if (!isManager) throw new NotFoundException('User is not a manager of this location');
+    if (!isManager)
+      throw new NotFoundException('User is not a manager of this location');
 
     await this.repo.removeManager(userId, locationId);
     this.audit.log({

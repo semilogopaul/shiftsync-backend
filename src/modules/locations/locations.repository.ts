@@ -18,7 +18,10 @@ export class LocationsRepository {
     return this.prisma.location.create({ data });
   }
 
-  async updateById(id: string, data: Prisma.LocationUpdateInput): Promise<Location> {
+  async updateById(
+    id: string,
+    data: Prisma.LocationUpdateInput,
+  ): Promise<Location> {
     return this.prisma.location.update({ where: { id }, data });
   }
 
@@ -30,19 +33,29 @@ export class LocationsRepository {
   }
 
   /** Count of upcoming non-deleted shifts at this location. Used to block delete. */
-  async countUpcomingShifts(id: string, now: Date = new Date()): Promise<number> {
+  async countUpcomingShifts(
+    id: string,
+    now: Date = new Date(),
+  ): Promise<number> {
     return this.prisma.shift.count({
       where: { locationId: id, deletedAt: null, startsAt: { gt: now } },
     });
   }
 
   async findManyPaginated(
-    filter: { search?: string; isActive?: boolean; managedByUserId?: string },
+    filter: {
+      search?: string;
+      isActive?: boolean;
+      managedByUserId?: string;
+      certifiedUserId?: string;
+    },
     pagination: { skip: number; take: number },
   ): Promise<{ items: Location[]; total: number }> {
     const where: Prisma.LocationWhereInput = {
       deletedAt: null,
-      ...(typeof filter.isActive === 'boolean' ? { isActive: filter.isActive } : {}),
+      ...(typeof filter.isActive === 'boolean'
+        ? { isActive: filter.isActive }
+        : {}),
       ...(filter.search
         ? {
             OR: [
@@ -53,6 +66,13 @@ export class LocationsRepository {
         : {}),
       ...(filter.managedByUserId
         ? { managers: { some: { userId: filter.managedByUserId } } }
+        : {}),
+      ...(filter.certifiedUserId
+        ? {
+            certifications: {
+              some: { userId: filter.certifiedUserId, decertifiedAt: null },
+            },
+          }
         : {}),
     };
     const [items, total] = await Promise.all([
@@ -86,7 +106,9 @@ export class LocationsRepository {
     return rows.map((r) => r.locationId);
   }
 
-  async listManagers(locationId: string): Promise<Array<LocationManager & { user: User }>> {
+  async listManagers(
+    locationId: string,
+  ): Promise<Array<LocationManager & { user: User }>> {
     return this.prisma.locationManager.findMany({
       where: { locationId },
       include: { user: true },
@@ -94,7 +116,10 @@ export class LocationsRepository {
     });
   }
 
-  async assignManager(userId: string, locationId: string): Promise<LocationManager> {
+  async assignManager(
+    userId: string,
+    locationId: string,
+  ): Promise<LocationManager> {
     return this.prisma.locationManager.upsert({
       where: { userId_locationId: { userId, locationId } },
       create: { userId, locationId },
@@ -106,5 +131,17 @@ export class LocationsRepository {
     await this.prisma.locationManager.deleteMany({
       where: { userId, locationId },
     });
+  }
+
+  /** Returns true if the employee holds an active certification for this location. */
+  async isEmployeeCertifiedForLocation(
+    userId: string,
+    locationId: string,
+  ): Promise<boolean> {
+    const found = await this.prisma.certification.findFirst({
+      where: { userId, locationId, decertifiedAt: null },
+      select: { id: true },
+    });
+    return found !== null;
   }
 }

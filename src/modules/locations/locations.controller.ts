@@ -21,7 +21,10 @@ import type { AuthenticatedUser } from '../../common/decorators/current-user.dec
 import { Roles } from '../../common/decorators/roles.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { ok } from '../../common/types/api-response.type';
-import { buildPaginatedResult, paginationToPrismaArgs } from '../../common/dto/pagination.dto';
+import {
+  buildPaginatedResult,
+  paginationToPrismaArgs,
+} from '../../common/dto/pagination.dto';
 import { LocationsService } from './locations.service';
 import {
   AssignManagerDto,
@@ -42,13 +45,19 @@ function readContext(user: AuthenticatedUser, req: Request) {
 @ApiTags('locations')
 @Controller({ path: 'locations', version: '1' })
 @UseGuards(RolesGuard)
-@Roles(Role.ADMIN, Role.MANAGER)
+@Roles(Role.ADMIN, Role.MANAGER, Role.EMPLOYEE)
 export class LocationsController {
   constructor(private readonly service: LocationsService) {}
 
   @Get()
-  @ApiOperation({ summary: 'List locations (managers see only their own; admins see all)' })
-  async list(@Query() query: ListLocationsQueryDto, @CurrentUser() user: AuthenticatedUser) {
+  @Roles(Role.ADMIN, Role.MANAGER, Role.EMPLOYEE)
+  @ApiOperation({
+    summary: 'List locations (admins: all; managers: theirs; staff: certified)',
+  })
+  async list(
+    @Query() query: ListLocationsQueryDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
     const { page, pageSize, search, isActive } = query;
     const { items, total } = await this.service.list(
       user,
@@ -59,8 +68,12 @@ export class LocationsController {
   }
 
   @Get(':id')
+  @Roles(Role.ADMIN, Role.MANAGER, Role.EMPLOYEE)
   @ApiOperation({ summary: 'Get a single location' })
-  async getById(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+  async getById(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
     return ok(await this.service.getById(user, id));
   }
 
@@ -104,7 +117,10 @@ export class LocationsController {
 
   @Get(':id/managers')
   @ApiOperation({ summary: 'List managers assigned to a location' })
-  async listManagers(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+  async listManagers(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
     await this.service.assertCanReadLocation(user, id);
     return ok(await this.service.listManagers(id));
   }
