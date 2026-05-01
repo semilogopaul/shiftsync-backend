@@ -2,6 +2,9 @@
 builder = "nixpacks"
 buildCommand = "npm ci && npx prisma generate && npm run build"
 
+[build.nixpacksPlan.phases.setup]
+nixPkgs = ["nodejs_22"]
+
 [deploy]
 startCommand = "node dist/main"
 healthcheckPath = "/api/v1"
