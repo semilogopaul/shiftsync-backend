@@ -8,12 +8,15 @@ export const REFRESH_TOKEN_COOKIE = 'refresh_token' as const;
  * Shared cookie options for both tokens.
  * - httpOnly: JS cannot read the cookie
  * - secure: only sent over HTTPS (enforced in production)
- * - sameSite: 'lax' allows same-site navigations; use 'strict' if no cross-origin needs
+ * - sameSite: 'none' in production to allow cross-site cookies (Netlify -> Railway);
+ *             'lax' in dev (same-site localhost) since 'none' requires secure HTTPS.
  */
+const IS_PROD = process.env.NODE_ENV === 'production';
+
 export const BASE_COOKIE_OPTIONS = {
   httpOnly: true,
-  secure: process.env.NODE_ENV === 'production',
-  sameSite: 'lax' as const,
+  secure: IS_PROD,
+  sameSite: IS_PROD ? 'none' : 'lax',
   path: '/',
 } as const;
 
@@ -33,6 +36,6 @@ export const REFRESH_COOKIE_OPTIONS = {
 /** Clear both cookies on logout */
 export const CLEAR_COOKIE_OPTIONS = {
   httpOnly: true,
-  secure: process.env.NODE_ENV === 'production',
-  sameSite: 'lax' as const,
+  secure: IS_PROD,
+  sameSite: IS_PROD ? 'none' : 'lax',
 } as const;
