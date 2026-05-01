@@ -1,6 +1,8 @@
 [build]
 builder = "nixpacks"
-buildCommand = "npm ci --include=dev && npm run build"
+
+[build.nixpacksPlan.variables]
+NPM_CONFIG_PRODUCTION = "false"
 
 [deploy]
 startCommand = "node dist/main.js"
