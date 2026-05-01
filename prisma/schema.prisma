@@ -1,0 +1,510 @@
+// ───────────────────────────────────────────────────────────────────────────
+// ShiftSync — Prisma schema
+// Database: Neon (PostgreSQL serverless)
+// Connection URL is configured in prisma.config.ts (Prisma 7 convention)
+// ───────────────────────────────────────────────────────────────────────────
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── Enums ─────────────────────────────────────────────────────────────────
+
+enum Role {
+  ADMIN
+  MANAGER
+  EMPLOYEE
+}
+
+enum AvailabilityExceptionType {
+  AVAILABLE
+  UNAVAILABLE
+}
+
+enum ShiftStatus {
+  DRAFT
+  PUBLISHED
+  CANCELLED
+}
+
+enum SwapStatus {
+  PENDING_RECIPIENT
+  PENDING_MANAGER
+  APPROVED
+  REJECTED_BY_RECIPIENT
+  REJECTED_BY_MANAGER
+  CANCELLED
+}
+
+enum DropStatus {
+  OPEN
+  PENDING_MANAGER
+  APPROVED
+  REJECTED_BY_MANAGER
+  EXPIRED
+  CANCELLED
+}
+
+enum NotificationType {
+  WELCOME
+  EMAIL_VERIFIED
+  PASSWORD_RESET_REQUESTED
+  PASSWORD_CHANGED
+  ROLE_CHANGED
+  CERT_GRANTED
+  CERT_REVOKED
+  AVAILABILITY_CHANGED
+  SHIFT_ASSIGNED
+  SHIFT_UNASSIGNED
+  SHIFT_CHANGED
+  SHIFT_CANCELLED
+  SCHEDULE_PUBLISHED
+  SWAP_REQUESTED
+  SWAP_RECIPIENT_RESPONDED
+  SWAP_MANAGER_APPROVED
+  SWAP_MANAGER_REJECTED
+  SWAP_AUTO_CANCELLED
+  DROP_REQUESTED
+  DROP_CLAIMED
+  DROP_APPROVED
+  DROP_REJECTED
+  DROP_EXPIRED
+  OVERTIME_WARNING
+  CONSECUTIVE_DAYS_WARNING
+}
+
+enum ClockEventType {
+  CLOCK_IN
+  CLOCK_OUT
+}
+
+enum AuditAction {
+  USER_CREATED
+  USER_UPDATED
+  USER_DELETED
+  USER_ROLE_CHANGED
+  USER_ACTIVATED
+  USER_DEACTIVATED
+  PASSWORD_CHANGED
+  PASSWORD_RESET_REQUESTED
+  PASSWORD_RESET_COMPLETED
+  EMAIL_VERIFIED
+  LOGIN_SUCCESS
+  LOGIN_FAILED
+  LOGOUT
+  TOKEN_REFRESHED
+  TOKEN_REUSE_DETECTED
+  LOCATION_CREATED
+  LOCATION_UPDATED
+  LOCATION_DELETED
+  LOCATION_MANAGER_ASSIGNED
+  LOCATION_MANAGER_REMOVED
+  SKILL_CREATED
+  SKILL_UPDATED
+  SKILL_DELETED
+  CERTIFICATION_GRANTED
+  CERTIFICATION_REVOKED
+  CERTIFICATION_UPDATED
+  AVAILABILITY_CREATED
+  AVAILABILITY_UPDATED
+  AVAILABILITY_DELETED
+  SHIFT_CREATED
+  SHIFT_UPDATED
+  SHIFT_DELETED
+  SHIFT_PUBLISHED
+  SHIFT_UNPUBLISHED
+  SHIFT_ASSIGNED
+  SHIFT_UNASSIGNED
+  SHIFT_OVERRIDE_USED
+  SWAP_REQUESTED
+  SWAP_RECIPIENT_ACCEPTED
+  SWAP_RECIPIENT_REJECTED
+  SWAP_APPROVED
+  SWAP_REJECTED
+  SWAP_CANCELLED
+  DROP_REQUESTED
+  DROP_CLAIMED
+  DROP_APPROVED
+  DROP_REJECTED
+  DROP_EXPIRED
+  CLOCK_IN
+  CLOCK_OUT
+  ACCESS_DENIED
+  AUDIT_EXPORTED
+  BULK_OPERATION
+}
+
+// ─── Auth & Users ──────────────────────────────────────────────────────────
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  passwordHash  String
+  role          Role      @default(EMPLOYEE)
+  firstName     String
+  lastName      String
+  phone         String?
+  emailVerified Boolean   @default(false)
+  isActive      Boolean   @default(true)
+
+  // Scheduling preferences
+  desiredWeeklyHours Int? // optional target hours; informs fairness reports
+  preferredTimezone  String? // IANA tz the user prefers to view times in
+
+  // Notification preferences
+  notifyInApp Boolean @default(true)
+  notifyEmail Boolean @default(true)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  // Relations
+  refreshTokens          RefreshToken[]
+  passwordResets         PasswordReset[]
+  emailVerifications     EmailVerification[]
+  managedLocations       LocationManager[]
+  certifications         Certification[]
+  availabilities         Availability[]
+  availabilityExceptions AvailabilityException[]
+  shiftsCreated          Shift[]                 @relation("ShiftCreatedBy")
+  shiftAssignments       ShiftAssignment[]       @relation("ShiftAssignmentUser")
+  shiftAssignmentsMade   ShiftAssignment[]       @relation("ShiftAssignmentAssignedBy")
+  swapRequestsFrom       SwapRequest[]           @relation("SwapRequestFrom")
+  swapRequestsTo         SwapRequest[]           @relation("SwapRequestTo")
+  swapDecisions          SwapRequest[]           @relation("SwapRequestDecidedBy")
+  dropRequestsFrom       DropRequest[]           @relation("DropRequestFrom")
+  dropClaims             DropRequest[]           @relation("DropRequestClaimedBy")
+  dropDecisions          DropRequest[]           @relation("DropRequestDecidedBy")
+  notifications          Notification[]
+  clockEvents            ClockEvent[]
+  auditLogs              AuditLog[]              @relation("AuditLogActor")
+
+  @@index([email])
+  @@index([role])
+  @@index([deletedAt])
+}
+
+/// Stores hashed refresh tokens for rotation + reuse detection.
+model RefreshToken {
+  id           String    @id @default(cuid())
+  userId       String
+  jti          String    @unique
+  tokenHash    String    @unique
+  expiresAt    DateTime
+  revokedAt    DateTime?
+  replacedById String?   @unique
+  ipAddress    String?
+  userAgent    String?
+  createdAt    DateTime  @default(now())
+
+  user       User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  replacedBy RefreshToken? @relation("TokenRotation", fields: [replacedById], references: [id])
+  replaces   RefreshToken? @relation("TokenRotation")
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model PasswordReset {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  ipAddress String?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model EmailVerification {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// ─── Org / Domain ──────────────────────────────────────────────────────────
+
+model Location {
+  id        String    @id @default(cuid())
+  name      String    @unique
+  timezone  String // IANA tz, e.g. "America/Los_Angeles"
+  address   String?
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  managers       LocationManager[]
+  certifications Certification[]
+  shifts         Shift[]
+
+  @@index([deletedAt])
+}
+
+model LocationManager {
+  id         String   @id @default(cuid())
+  userId     String
+  locationId String
+  createdAt  DateTime @default(now())
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  location Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, locationId])
+  @@index([locationId])
+}
+
+model Skill {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  certifications CertificationSkill[]
+  shifts         Shift[]
+}
+
+/// User <-> Location certification with a subset of skills.
+/// History is preserved via decertifiedAt — rows are never deleted.
+model Certification {
+  id            String    @id @default(cuid())
+  userId        String
+  locationId    String
+  certifiedAt   DateTime  @default(now())
+  decertifiedAt DateTime?
+  expiresAt     DateTime?
+  notes         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  user     User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  location Location             @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  skills   CertificationSkill[]
+
+  @@unique([userId, locationId])
+  @@index([userId, decertifiedAt])
+  @@index([locationId])
+}
+
+model CertificationSkill {
+  certificationId String
+  skillId         String
+  createdAt       DateTime @default(now())
+
+  certification Certification @relation(fields: [certificationId], references: [id], onDelete: Cascade)
+  skill         Skill         @relation(fields: [skillId], references: [id], onDelete: Cascade)
+
+  @@id([certificationId, skillId])
+  @@index([skillId])
+}
+
+// ─── Availability ──────────────────────────────────────────────────────────
+
+/// Recurring weekly availability window. Stored in user's stated tz so DST
+/// transitions resolve correctly when projected onto an actual date.
+model Availability {
+  id             String    @id @default(cuid())
+  userId         String
+  dayOfWeek      Int // 0=Sun..6=Sat
+  startMinute    Int // 0..1440 from local midnight
+  endMinute      Int // 0..1440; if endMinute <= startMinute, window crosses midnight
+  timezone       String // IANA tz
+  effectiveFrom  DateTime?
+  effectiveUntil DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, dayOfWeek])
+}
+
+/// One-off availability override (vacation, extra availability, etc.).
+model AvailabilityException {
+  id        String                    @id @default(cuid())
+  userId    String
+  type      AvailabilityExceptionType
+  startsAt  DateTime
+  endsAt    DateTime
+  note      String?
+  createdAt DateTime                  @default(now())
+  updatedAt DateTime                  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, startsAt, endsAt])
+}
+
+// ─── Shifts ────────────────────────────────────────────────────────────────
+
+model Shift {
+  id          String      @id @default(cuid())
+  locationId  String
+  skillId     String
+  startsAt    DateTime
+  endsAt      DateTime
+  headcount   Int
+  isPremium   Boolean     @default(false)
+  status      ShiftStatus @default(DRAFT)
+  publishedAt DateTime?
+  notes       String?
+  version     Int         @default(0)
+  createdById String
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  deletedAt   DateTime?
+
+  location     Location          @relation(fields: [locationId], references: [id])
+  skill        Skill             @relation(fields: [skillId], references: [id])
+  createdBy    User              @relation("ShiftCreatedBy", fields: [createdById], references: [id])
+  assignments  ShiftAssignment[]
+  swapRequests SwapRequest[]
+  dropRequests DropRequest[]
+  clockEvents  ClockEvent[]
+
+  @@index([locationId, startsAt])
+  @@index([startsAt])
+  @@index([status])
+  @@index([deletedAt])
+}
+
+model ShiftAssignment {
+  id             String   @id @default(cuid())
+  shiftId        String
+  userId         String
+  assignedById   String
+  assignedAt     DateTime @default(now())
+  overrideUsed   Boolean  @default(false)
+  overrideReason String?
+
+  shift      Shift @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+  user       User  @relation("ShiftAssignmentUser", fields: [userId], references: [id])
+  assignedBy User  @relation("ShiftAssignmentAssignedBy", fields: [assignedById], references: [id])
+
+  @@unique([shiftId, userId])
+  @@index([userId])
+}
+
+// ─── Swaps & Drops ─────────────────────────────────────────────────────────
+
+model SwapRequest {
+  id                   String     @id @default(cuid())
+  shiftId              String
+  fromUserId           String
+  toUserId             String
+  status               SwapStatus @default(PENDING_RECIPIENT)
+  recipientRespondedAt DateTime?
+  managerDecisionAt    DateTime?
+  decidedById          String?
+  reason               String?
+  createdAt            DateTime   @default(now())
+  updatedAt            DateTime   @updatedAt
+
+  shift     Shift @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+  fromUser  User  @relation("SwapRequestFrom", fields: [fromUserId], references: [id])
+  toUser    User  @relation("SwapRequestTo", fields: [toUserId], references: [id])
+  decidedBy User? @relation("SwapRequestDecidedBy", fields: [decidedById], references: [id])
+
+  @@index([shiftId])
+  @@index([fromUserId, status])
+  @@index([toUserId, status])
+}
+
+model DropRequest {
+  id                String     @id @default(cuid())
+  shiftId           String
+  fromUserId        String
+  status            DropStatus @default(OPEN)
+  claimedById       String?
+  claimedAt         DateTime?
+  managerDecisionAt DateTime?
+  decidedById       String?
+  expiresAt         DateTime
+  reason            String?
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+
+  shift     Shift @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+  fromUser  User  @relation("DropRequestFrom", fields: [fromUserId], references: [id])
+  claimedBy User? @relation("DropRequestClaimedBy", fields: [claimedById], references: [id])
+  decidedBy User? @relation("DropRequestDecidedBy", fields: [decidedById], references: [id])
+
+  @@index([shiftId])
+  @@index([fromUserId, status])
+  @@index([status, expiresAt])
+}
+
+// ─── Notifications ─────────────────────────────────────────────────────────
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  type      NotificationType
+  title     String
+  body      String
+  payload   Json?
+  readAt    DateTime?
+  createdAt DateTime         @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt])
+  @@index([createdAt])
+}
+
+// ─── Clock events ──────────────────────────────────────────────────────────
+
+model ClockEvent {
+  id         String         @id @default(cuid())
+  shiftId    String
+  userId     String
+  type       ClockEventType
+  occurredAt DateTime       @default(now())
+
+  shift Shift @relation(fields: [shiftId], references: [id])
+  user  User  @relation(fields: [userId], references: [id])
+
+  @@index([shiftId, type])
+  @@index([userId, occurredAt])
+}
+
+// ─── Audit Log ─────────────────────────────────────────────────────────────
+// Append-only. Never updated, never deleted. Admin-only access.
+
+model AuditLog {
+  id         String      @id @default(cuid())
+  action     AuditAction
+  entityType String
+  entityId   String?
+  actorId    String?
+  actorRole  String?
+  before     Json?
+  after      Json?
+  meta       Json?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime    @default(now())
+
+  actor User? @relation("AuditLogActor", fields: [actorId], references: [id])
+
+  @@index([actorId])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@index([action])
+}
