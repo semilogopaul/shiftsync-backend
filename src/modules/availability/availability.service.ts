@@ -272,6 +272,19 @@ export class AvailabilityService {
     if (input.endsAt <= input.startsAt) {
       throw new BadRequestException('endsAt must be after startsAt');
     }
+    // Reject duplicate / overlapping exceptions for the same user on the same date range.
+    const existing = await this.repo.listExceptionsForUser(userId, {
+      from: input.startsAt,
+      to: input.endsAt,
+    });
+    const overlapping = existing.filter(
+      (e) => e.startsAt < input.endsAt && e.endsAt > input.startsAt,
+    );
+    if (overlapping.length > 0) {
+      throw new BadRequestException(
+        `You already have an exception on ${input.startsAt.toISOString().slice(0, 10)}. Delete it first.`,
+      );
+    }
     const created = await this.repo.createException({ ...input, userId });
     this.audit.log({
       action: AuditAction.AVAILABILITY_CREATED,
