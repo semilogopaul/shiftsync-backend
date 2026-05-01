@@ -1,6 +1,10 @@
 /**
  * Shared HTML scaffolding for all transactional emails.
  * Keeps a consistent ShiftSync look (purple theme matching the frontend).
+ *
+ * Logo: hosted on GitHub so email clients can fetch it without a deployed server.
+ * Uses the grey logo (dark text + purple icon) which renders correctly on the
+ * light (#f6f4f9) email background.
  */
 
 interface BaseLayoutInput {
@@ -16,6 +20,8 @@ const BG = '#f6f4f9';
 const CARD_BG = '#ffffff';
 const TEXT = '#1a1a1f';
 const MUTED = '#6b6877';
+const LOGO_URL =
+  'https://raw.githubusercontent.com/semilogopaul/shiftsync-frontend/main/public/logo/shiftsync-grey-logo.png';
 
 export function baseLayout(input: BaseLayoutInput): string {
   const { title, preview, bodyHtml, cta, footerNote } = input;
@@ -48,7 +54,10 @@ export function baseLayout(input: BaseLayoutInput): string {
       <table role="presentation" width="560" cellspacing="0" cellpadding="0" style="background:${CARD_BG};border-radius:12px;padding:40px 36px;box-shadow:0 1px 3px rgba(0,0,0,0.05);">
         <tr>
           <td>
-            <div style="font-size:18px;font-weight:700;color:${BRAND_COLOR};letter-spacing:-0.01em;margin-bottom:24px;">ShiftSync</div>
+            <div style="margin-bottom:28px;">
+              <img src="${LOGO_URL}" alt="ShiftSync" width="148" height="auto"
+                   style="display:block;border:0;outline:none;text-decoration:none;max-width:148px;" />
+            </div>
             <h1 style="font-size:22px;font-weight:600;margin:0 0 16px;color:${TEXT};letter-spacing:-0.01em;">${escapeHtml(title)}</h1>
             <div style="font-size:15px;line-height:1.6;color:${TEXT};">
               ${bodyHtml}
